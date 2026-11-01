@@ -226,7 +226,7 @@ dsh plugin --profile desktop add dsh-superagent-panel
 | 2 | `stateDir` 配置校验失败 | 原型只接受 POSIX 绝对路径 | `src/deployment.ts` 接受 `C:\` / `C:/` |
 | 3 | `gh` 在 PATH 上"找不到" | Windows 用 PATHEXT，命令名要补 `.exe/.cmd/.bat` | `src/deployment.ts` 的 `executable()` 按 PATHEXT 探测 |
 | 4 | 恢复 orchestrator Session 时报 `tools.restrict() names unknown global tool "bash"` | Windows 上 DSH 只注册 `pwsh`；白名单写死 `bash` 会让插件挂载失败 | `src/app/sessions.ts` 按平台选 `bash`/`pwsh` |
-| 5 | 强制停止后马上启动：`Lock file is already being held` | lockfile 用 `<stateDir>.lock`，Windows `taskkill` 不会释放；stale 30s | 启动器在强制停止并确认进程退出后清锁；外部崩溃留下的锁 >31s 自动清理 |
+| 5 | 强制停止后马上启动：`Lock file is already being held`；**或重启后管理 API 全部 404、面板显示服务无响应** | lockfile 用 `<stateDir>.lock`，Windows `taskkill` 不会释放；`proper-lockfile` 的 stale 窗口是 30s。更隐蔽的一种：上一次失败的重启删掉了 `service.pid` 却留下新鲜的锁目录，启动器 `stop` 因“没有存活 pid”跳过清锁，紧接着的 `start` 被锁挡住，`dsh-superagent` 插件整体挂载失败 → `/orchestrator/api/*` 全 404 | 启动器 `stop`/`restart` **无条件**强制清锁；`start` 在“无存活 pid 且 URL 无 orchestrator 应答”时也强制清锁，不再等 30s；外部崩溃的 31s 兜底保留 |
 | 6 | 服务运行时每分钟闪一批控制台窗口（6–8 个） | GitHub Source 每 60s 起 6–8 个 `gh`，`execFile` 默认 `windowsHide:false`，而服务本身无控制台 | `src/infra/commands.ts`、`src/sources/feishu-loops.ts`、启动器的 `where/taskkill` 全部 `windowsHide:true`；95s 观察窗 15 → 0 |
 | 7 | 从 DSH NEXT 面板拉起服务后卡在 `setup: agentCliSignedOut`，`values.output = "spawn env ENOENT"` | 插件的 setup 探针要跑 `env`、prepare 要跑 `sh`；Git for Windows 把它们放在 `Git\usr\bin`，安装器只把 `Git\cmd` 加进 PATH。从 Git Bash 启动时天然有，从桌面进程启动时没有 | 启动器 start 时 `ensureGitBashPath()`：把存在的 `Git\cmd`、`Git\usr\bin`、`Git\mingw64\bin`、`Git\bin` 前置进子进程 PATH |
 | 8 | agent 账号隔离 | 原型用 `~/.local/bin/gh-agent` 这种 `#!/bin/sh` 包装脚本；Windows 不执行 sh shim，`blockedCommands` 失效 | 改用 `GH_CONFIG_DIR` 指向 agent 专用配置目录；注意 `blockedCommands` 在 Windows 不生效（已知限制） |
@@ -247,6 +247,7 @@ dsh plugin --profile desktop add dsh-superagent-panel
 | 18 | 服务重启后 iframe 仍显示旧 token 页面/401 | 面板 URL 的 token 每次重启都变 | 从最新日志重新取 token URL 换 cookie；401 时强制重换一次 |
 | 19 | **本地端口耗尽**：所有本机连接报 `EADDRINUSE`，连 `Test-NetConnection` 都异常 | 曾让桥接插件把 API 转发给"自己"（服务进程内 `http.request` 到本机 3082），叠加面板轮询产生约 1.5 万个 `TIME_WAIT` | 取消自转发：API 改走 DSH NEXT 侧的同源代理（`../orchestrator/api/*`）；`TIME_WAIT` 约 2 分钟自然回收 |
 | 20 | 面板里出现两个标题栏/两份状态 | 外层工具条与内嵌面板都在展示同一批信息 | 外层只保留状态徽标与操作按钮，信息交给内嵌面板；删掉重复的「状态」tab |
+| 21 | 重启服务后内嵌面板“没有响应”/接口 404 | 与 6.1 #5 同源：锁未清导致 `dsh-superagent` 插件挂载失败，管理 API 404。排查：`curl -H "x-orchestrator-request: 1" http://127.0.0.1:3082/orchestrator/api/state` 返回 404，且服务日志里有 `Lock file is already being held` | 已修复（见 6.1 #5）；临时处置：再 `stop` + `start` 一次即可恢复 |
 
 ### 6.3 环境类（不是代码问题，但会消耗大量排查时间）
 

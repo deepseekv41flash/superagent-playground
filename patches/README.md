@@ -29,7 +29,7 @@ npx tsdown    # 应用过 2 号补丁后才会多出 lib/standalone.js（约 546
 
 | 文件 | 改动 |
 |---|---|
-| `scripts/dsh-superagent.mjs`（新增 321 行） | Windows 服务管理器：start/status/stop/restart、退出码 0/1/2/3、`--respect-stop`、`.artifacts` 日志、锁清理、`ensureGitBashPath()` |
+| `scripts/dsh-superagent.mjs`（新增 321 行） | Windows 服务管理器：start/status/stop/restart、退出码 0/1/2/3、`--respect-stop`、`.artifacts` 日志、锁清理（含无存活实例时的强制清理，修复立即重启）、`ensureGitBashPath()` |
 | `scripts/dsh-superagent.cmd`（新增） | `node …mjs` 的 cmd 包装 |
 | `src/deployment.ts` | `stateDir` 接受 `C:\` / `C:/`；`executable()` 按 PATHEXT 补 `.exe/.cmd/.bat` |
 | `src/app/sessions.ts` | 工具白名单/`noWait` 按平台选 `bash` / `pwsh` |

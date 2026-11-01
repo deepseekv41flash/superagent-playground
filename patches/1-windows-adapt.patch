@@ -1,9 +1,9 @@
 diff --git a/WINDOWS-NOTES.md b/WINDOWS-NOTES.md
 new file mode 100644
-index 0000000..11613af
+index 0000000..1a2ebd6
 --- /dev/null
 +++ b/WINDOWS-NOTES.md
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,103 @@
 +# Windows 运行说明（本地适配）
 +
 +这个目录是 `deepseek-ai/dsh-superagent-prototype` 的克隆，并按本机（Windows）做了少量适配。
@@ -78,8 +78,13 @@ index 0000000..11613af
 +### 强制停止后立刻启动失败：`Lock file is already being held`（2026-11-01 修复）
 +
 +`src/app/runtime.ts` 用 `lockSync(machine.stateDir, { stale: 30_000 })` 锁 `<stateDir>.lock`。Windows 上 `stop` 只能
-+`taskkill`（没有安全的 SIGINT 传递），进程不会释放锁，紧接着 `start` 就会失败 30 秒。启动器现在在强制停止并确认进程
-+已退出后清掉该锁；外部崩溃留下的锁则在超过 31 秒后自动清理。
++`taskkill`（没有安全的 SIGINT 传递），进程不会释放锁，紧接着 `start` 就会失败 30 秒。
++
++启动器的处理（2026-11-01 追加一次修正）：`stop`/`restart` 结束前**无条件**强制清掉该锁；`start` 在
++「没有存活 pid 且 URL 上没有 orchestrator 应答」时也无条件强制清理，不再等 30 秒过期。
++原因：一次失败的重启可能已经把 `service.pid` 删掉、却留下新鲜的锁目录，随后立刻重启就会
++`dsh-superagent` 插件挂载失败（管理 API 全部 404，面板会显示服务无响应），等 30 秒再启才恢复。
++另外「超过 31 秒自动清理」仍然保留，作为外部崩溃后的兜底。
 +
 +
 +## 验证记录（2026-11-01）
@@ -112,10 +117,10 @@ index 0000000..f0a01f7
 +node "%~dp0dsh-superagent.mjs" %*
 diff --git a/scripts/dsh-superagent.mjs b/scripts/dsh-superagent.mjs
 new file mode 100644
-index 0000000..809a210
+index 0000000..f653896
 --- /dev/null
 +++ b/scripts/dsh-superagent.mjs
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,325 @@
 +#!/usr/bin/env node
 +/**
 + * Windows-friendly manager for a local dsh-superagent service (one DSH profile, default `superagent`).
@@ -303,7 +308,9 @@ index 0000000..809a210
 +  const dir = control(args.profile)
 +  if (pids.length === 0) {
 +    if (await state(args.url) !== null) throw new Error('An existing orchestrator answers at this URL; refusing duplicate startup.')
-+    if (clearLock(args.profile)) console.log('Removed a stale state lock left by a killed process.')
++    // Nothing answers at the URL and no service pid is alive, so any lock directory left over cannot belong to a
++    // running service: clearing it disregards the 30 s staleness window that makes an immediate restart fail.
++    if (clearLock(args.profile, { force: true })) console.log('Removed a stale state lock left by a killed process.')
 +    const dsh = dshCommand(args)
 +    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
 +    const log = join(ARTIFACTS, `dsh-superagent-${args.profile}-${stamp}-${process.pid}.log`)
@@ -373,7 +380,9 @@ index 0000000..809a210
 +    }
 +  }
 +  // A force-killed process keeps proper-lockfile's directory (30 s staleness) although its owner is gone.
-+  if (pids.length) clearLock(args.profile, { force: true })
++  // Clear it even when no live pid was found: an earlier failed start can leave the pid file gone while the
++  // lock directory is still fresh, and a start within 30 s would then fail with "Lock file is already being held".
++  clearLock(args.profile, { force: true })
 +  try { unlinkSync(join(dir, 'service.pid')) } catch { /* Already gone. */ }
 +  console.log(intentional ? 'dsh-superagent stopped. Automatic recovery is paused until start/restart.' : 'dsh-superagent stopped.')
 +}
