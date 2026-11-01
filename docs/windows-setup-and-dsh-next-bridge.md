@@ -214,6 +214,27 @@ dsh plugin --profile desktop add dsh-superagent-panel
 配置（可选）：两个插件都支持在 profile patch 的条目里写 `config`，也支持环境变量
 `DSH_SUPERAGENT_REPO`（原型 checkout）、`DSH_SUPERAGENT_STANDALONE`（面板 ESM 路径）。
 
+### 5.5 宿主机重启后怎么启动
+
+服务本体是独立进程，**重启后不会自动启动**。三种方式：
+
+1. 打开 DSH NEXT 的 Superagent 面板，点「启动」；
+2. 命令行：`node scripts/dsh-superagent.mjs start --profile superagent`；
+3. 让面板插件随 DSH NEXT 一起拉起（面板插件 0.1.3+）：在 DSH NEXT 所用 profile 的
+   `cordis.patch.yml` 末尾加
+
+   ```yaml
+   - id: dsh-superagent-panel
+     name: dsh-superagent-panel
+     config:
+       autoStart: true
+   ```
+
+   `autoStart` 只在服务未运行时生效，手动 `stop` 留下的 `manually-stopped` 标记会被尊重；
+   实测 DSH NEXT 启动后 **14 秒**内服务就绪（插件延迟 8 秒再拉起，启动本身约 6 秒）。
+   注意前提是 DSH NEXT 自己先启动——是否需要开机自启由桌面端/系统登录项决定，与插件无关。
+
+
 ---
 
 ## 6. 踩过的坑与解决办法
